@@ -66,23 +66,32 @@ namespace xtender {
 
             Log.Write("Started up");
             while (true) {
-                NamedPipeServerStream server = new NamedPipeServerStream(PIPE_NAME);
+                Log.Write("Opening pipe server...", "Debug");
+                NamedPipeServerStream server = new NamedPipeServerStream(PIPE_NAME, PipeDirection.InOut, 5);
+                Log.Write("Opened pipe server", "Debug");
                 server.WaitForConnection();
+                Log.Write("Got connection", "Debug");
                 StreamReader reader = new StreamReader(server);
                 StreamWriter writer = new StreamWriter(server);
 
-                while (server.IsConnected) {
-                    String str = reader.ReadLine();
-                    if (str != null) {
+                try {
+                    do {
+                        String str = reader.ReadLine();
                         Log.Write("Received: " + str, "Debug");
-                        string @out = Parse(str);
-                        Log.Write("Response: " + @out, "Debug");
-                        writer.Write(@out);
-                        writer.Flush();
-                        writer.Close();
-                    }
-                }
+                        if (str != null) {
+                            string @out = Parse(str);
+                            Log.Write("Response: " + @out, "Debug");
+                            writer.Write(@out);
+                            writer.Flush();
+                            writer.Close();
+                        }
+                    } while (server.IsConnected);
 
+                }catch(Exception ex) {
+                    Log.WriteFault(ex, "Error reading from pipe");
+                } finally {
+                    server.Close();
+                }
             }
         }
 
@@ -97,7 +106,7 @@ namespace xtender {
                         SetDelayedResponse(ERROR_EXCEPTION);
                     }
                 }
-                Thread.Sleep(100);
+                Thread.Sleep(50);
             }
             Log.WriteError("Executor ended", "Debug");
         }
@@ -136,9 +145,6 @@ namespace xtender {
                     case "set_gs_host":
                         NetworkManager.SetHost(String.Join(":", args, 1, args.Length - 1));
                         return RESPONSE_OK;
-                    case "delay_test":
-                        StartDelayed(DelayTest);
-                        return ERROR_DELAYING;
                     case "network_request":
                         return GetRemoteData(args[1], args[2]);
                     case "download":
@@ -168,11 +174,6 @@ namespace xtender {
             Log.Write("StartDelayed: " + func, "Debug");
             DelayResponse = null;
             ExecutorDelayFunction = func;
-        }
-
-        private static void DelayTest() {
-            Thread.Sleep(5000);
-            DelayResponse = "very delayed answer lol";
         }
 
         private static string GetRemoteData(string url, string request) {
